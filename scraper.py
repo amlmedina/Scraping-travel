@@ -52,21 +52,16 @@ def scrape_bookings():
             start_date = "01/06/2026"
             print(f"Estableciendo fecha de inicio de búsqueda a: {start_date}")
             
+            # Rellenar las fechas directamente en el DOM mediante JavaScript sin disparar eventos de red intermedios
+            print("Rellenando campos de fecha en el DOM...")
             page.evaluate(f"""(date) => {{
                 const fromInput = document.getElementById('search-form:booking-filters:creationDateFrom_input');
-                const clearBtn = document.querySelector('.dev-clear-dates') || 
-                                 [...document.querySelectorAll('button, a, span')].find(el => el.textContent.includes('Eliminar fechas'));
-                
-                // Limpiamos fechas primero para evitar conflictos
-                if (clearBtn) clearBtn.click();
-                
-                // Rellenamos la nueva fecha de inicio
-                if (fromInput) {{
-                    fromInput.value = date;
-                    fromInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                }}
+                const toInput = document.getElementById('search-form:booking-filters:creationDateTo_input');
+                if (fromInput) fromInput.value = date;
+                if (toInput) toInput.value = '';
             }}""", start_date)
-            time.sleep(2)
+            
+            time.sleep(1)
             
             print("Haciendo clic en 'Aplicar'...")
             page.evaluate("""() => {
