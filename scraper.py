@@ -39,7 +39,7 @@ def scrape_bookings():
         page.goto(bookings_url)
         page.wait_for_selector("tbody[id='search-form:BOOKINGS_data']")
         
-        # Abrir filtros, limpiar fechas y aplicar
+        # Abrir filtros, aplicar rango de fechas (últimos 30 días) y aplicar
         try:
             print("Abriendo panel de Filtros...")
             page.evaluate("""() => {
@@ -48,12 +48,24 @@ def scrape_bookings():
             }""")
             time.sleep(2)
             
-            print("Haciendo clic en 'Eliminar fechas'...")
-            page.evaluate("""() => {
-                const btn = document.querySelector('.dev-clear-dates') || 
-                            [...document.querySelectorAll('button, a, span')].find(el => el.textContent.includes('Eliminar fechas'));
-                if (btn) btn.click();
-            }""")
+            # Establecer fecha de inicio fija al 1 de junio de 2026
+            start_date = "01/06/2026"
+            print(f"Estableciendo fecha de inicio de búsqueda a: {start_date}")
+            
+            page.evaluate(f"""(date) => {{
+                const fromInput = document.getElementById('search-form:booking-filters:creationDateFrom_input');
+                const clearBtn = document.querySelector('.dev-clear-dates') || 
+                                 [...document.querySelectorAll('button, a, span')].find(el => el.textContent.includes('Eliminar fechas'));
+                
+                // Limpiamos fechas primero para evitar conflictos
+                if (clearBtn) clearBtn.click();
+                
+                // Rellenamos la nueva fecha de inicio
+                if (fromInput) {{
+                    fromInput.value = date;
+                    fromInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            }}""", start_date)
             time.sleep(2)
             
             print("Haciendo clic en 'Aplicar'...")
