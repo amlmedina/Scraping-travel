@@ -1,0 +1,38 @@
+name: Abastur Hourly Scraper
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright pandas gspread google-auth
+          playwright install chromium
+
+      - name: Run Scraper
+        env:
+          ABASTUR_USER: ${{ secrets.ABASTUR_USER }}
+          ABASTUR_PASS: ${{ secrets.ABASTUR_PASS }}
+        run: |
+          python scraper.py
+
+      - name: Upload to Google Sheets
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python upload_to_sheets.py
