@@ -1,0 +1,17 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Datos extraídos (evitar subir datos confidenciales de clientes)
+bookings.csv
+*.csv
+
+# Archivos de sistema de desarrollo
+.DS_Store
+.vscode/
+.idea/

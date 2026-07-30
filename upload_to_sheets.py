@@ -4,30 +4,56 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
+
+def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
+    """Sube un CSV a una pestaña del Google Sheet. La crea si no existe."""
+    if not os.path.exists(csv_path):
+        print(f"  ⚠ No se encontró {csv_path}, saltando '{worksheet_name}'.")
+        return
+
+    print(f"\nCargando datos desde {os.path.basename(csv_path)}...")
+    df = pd.read_csv(csv_path)
+    df = df.fillna("")
+
+    data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
+
+    # Buscar o crear la pestaña
+    try:
+        worksheet = sh.worksheet(worksheet_name)
+        print(f"  Pestaña '{worksheet_name}' encontrada, limpiando...")
+        worksheet.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"  Creando pestaña '{worksheet_name}'...")
+        worksheet = sh.add_worksheet(
+            title=worksheet_name,
+            rows=max(len(data_to_upload) + 10, 100),
+            cols=max(len(data_to_upload[0]) + 5, 30) if data_to_upload else 30,
+        )
+
+    worksheet.update(values=data_to_upload, range_name="A1")
+    print(f"  ✓ '{worksheet_name}' actualizada con {len(df)} filas.")
+
+
 def upload():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_file = os.path.join(script_dir, "bookings.csv")
-    if not os.path.exists(csv_file):
-        print(f"Error: El archivo CSV no existe en {csv_file}")
+    bookings_csv = os.path.join(script_dir, "bookings.csv")
+    hotels_csv = os.path.join(script_dir, "hotels.csv")
+    transports_csv = os.path.join(script_dir, "transports.csv")
+    financial_csv = os.path.join(script_dir, "financial.csv")
+    activities_csv = os.path.join(script_dir, "activities.csv")
+
+    if not os.path.exists(bookings_csv):
+        print(f"Error: El archivo CSV no existe en {bookings_csv}")
         sys.exit(1)
-        
-    print("Cargando datos desde CSV...")
-    df = pd.read_csv(csv_file)
-    
-    # Reemplazar valores nulos con cadenas vacías para Google Sheets
-    df = df.fillna("")
-    
-    # Preparar datos para subir (cabecera + filas)
-    data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
-    
+
     import json
-    
+
     # Configurar credenciales
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    
+
     print("Autenticando con Google Sheets API...")
     gcp_json_str = os.environ.get("GCP_SERVICE_ACCOUNT_JSON")
     if gcp_json_str:
@@ -35,34 +61,48 @@ def upload():
         info = json.loads(gcp_json_str)
         creds = Credentials.from_service_account_info(info, scopes=scopes)
     else:
-        creds_path = "/Users/alejandro/Viajes RM/pivotal-keep-447418-r0-dca467a9d1b3.json"
+        creds_path = os.path.join(script_dir, "gcp_key.json")
+        if not os.path.exists(creds_path):
+            creds_path = "/Users/alejandro/Viajes RM/pivotal-keep-447418-r0-dca467a9d1b3.json"
         print(f"Cargando credenciales locales desde: {creds_path}")
         creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
-        
+
     client = gspread.authorize(creds)
-    
+
     # Abrir la hoja de cálculo
     sheet_url = "https://docs.google.com/spreadsheets/d/1uauLtgcOFg0Gp9432TEzVqZ01M8OrulQSb_DWxeNW-M/edit?usp=sharing"
     print(f"Abriendo la hoja de cálculo: {sheet_url}")
-    
+
     try:
         sh = client.open_by_url(sheet_url)
-        worksheet = sh.get_worksheet(0) # Abrir la primera pestaña
-        
-        print("Limpiando hoja actual y subiendo nuevos datos...")
-        worksheet.clear()
-        
-        # Subir los datos en un solo bloque
-        worksheet.update(values=data_to_upload, range_name="A1")
-        print("¡Google Sheets actualizado con éxito!")
-        
+
+        # Subir cada CSV a su pestaña
+        worksheets = [
+            (bookings_csv, "Reservas"),
+            (hotels_csv, "Alojamientos"),
+            (transports_csv, "Transportes"),
+            (financial_csv, "Financiero"),
+            (activities_csv, "Actividades"),
+        ]
+
+        for idx, (csv_path, sheet_name) in enumerate(worksheets):
+            _upload_csv_to_worksheet(sh, csv_path, sheet_name, idx)
+
+        print("\n✅ ¡Google Sheets actualizado con éxito!")
+
     except gspread.exceptions.APIError as e:
         print(f"Error de API: {e}")
         print("\nIMPORTANTE: Por favor asegúrate de que el documento de Google Sheets esté compartido con el correo del bot:")
         print("bot-sheets@pivotal-keep-447418-r0-iam.gserviceaccount.com")
         print("con permisos de Editor.")
+    except PermissionError:
+        print("\nERROR DE PERMISOS (403): La cuenta de servicio no tiene acceso a esta hoja de cálculo.")
+        print("Por favor, ve a tu Google Sheet, haz clic en 'Compartir' y agrega el siguiente correo como EDITOR:")
+        print("  bot-sheets@pivotal-keep-447418-r0-iam.gserviceaccount.com")
     except Exception as e:
-        print(f"Ocurrió un error: {e}")
+        print(f"Ocurrió un error inesperado: {e}")
+
 
 if __name__ == "__main__":
     upload()
+
