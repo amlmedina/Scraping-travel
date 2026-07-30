@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -9,7 +10,7 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
     """Sube un CSV a una pestaña del Google Sheet. La crea si no existe."""
     if not os.path.exists(csv_path):
         print(f"  ⚠ No se encontró {csv_path}, saltando '{worksheet_name}'.")
-        return
+        return 0
 
     print(f"\nCargando datos desde {os.path.basename(csv_path)}...")
     df = pd.read_csv(csv_path)
@@ -32,6 +33,31 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
 
     worksheet.update(values=data_to_upload, range_name="A1")
     print(f"  ✓ '{worksheet_name}' actualizada con {len(df)} filas.")
+    return len(df)
+
+
+def _upload_timestamp_worksheet(sh, stats):
+    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora y métricas."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    data_to_upload = [
+        ["Métrica / Campo", "Valor"],
+        ["Última Actualización", now_str],
+        ["Estado del Proceso", "Exitoso"],
+    ]
+
+    for name, count in stats.items():
+        data_to_upload.append([f"Filas en {name}", count])
+
+    worksheet_name = "Ultima_Actualizacion"
+    try:
+        worksheet = sh.worksheet(worksheet_name)
+        worksheet.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = sh.add_worksheet(title=worksheet_name, rows=20, cols=5)
+
+    worksheet.update(values=data_to_upload, range_name="A1")
+    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada con fecha: {now_str}")
 
 
 def upload():
@@ -85,8 +111,13 @@ def upload():
             (activities_csv, "Actividades"),
         ]
 
+        stats = {}
         for idx, (csv_path, sheet_name) in enumerate(worksheets):
-            _upload_csv_to_worksheet(sh, csv_path, sheet_name, idx)
+            row_count = _upload_csv_to_worksheet(sh, csv_path, sheet_name, idx)
+            stats[sheet_name] = row_count
+
+        # Subir pestaña con fecha y hora de actualización
+        _upload_timestamp_worksheet(sh, stats)
 
         print("\n✅ ¡Google Sheets actualizado con éxito!")
 
