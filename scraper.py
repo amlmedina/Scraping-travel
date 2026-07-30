@@ -89,10 +89,11 @@ def _read_table_headers(detail_page, thead_selector):
     return headers
 
 
-def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id, known_columns=None):
+def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id):
     """Scrapes una pestaña y su tabla dentro de la página de detalle.
 
-    Busca la tabla dinámicamente dentro del panel del tab.
+    Lee dinámicamente los encabezados del thead y alinea 1-a-1 con las celdas td
+    por índice exacto para evitar desplazamientos de columnas.
 
     Args:
         detail_page: La página de Playwright.
@@ -100,7 +101,6 @@ def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id,
         panel_id: ID del div panel del tab (sin #).
         tab_name: Nombre legible (para logs).
         booking_id: ID del booking (para logs).
-        known_columns: Lista fija de columnas. Si None, se leen del thead.
 
     Returns:
         Tuple (rows_list, columns_list).
@@ -121,28 +121,31 @@ def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id,
     thead = detail_page.query_selector(f"{panel_sel} thead")
     tbody = detail_page.query_selector(f"{panel_sel} tbody")
 
-    if not tbody:
+    if not tbody or not thead:
         return [], []
 
-    # Determinar columnas
-    if known_columns:
-        columns = known_columns
-    else:
-        columns = []
-        if thead:
-            th_elements = thead.query_selector_all("th")
-            for th in th_elements:
-                title_el = th.query_selector(".ui-column-title")
-                title = title_el.inner_text().strip() if title_el else th.inner_text().strip()
-                columns.append(title)
-        # Filtrar columna vacía de "Opciones" al inicio
-        if columns and not columns[0]:
-            columns = columns[1:]
-
-    if not columns:
+    th_elements = thead.query_selector_all("th")
+    if not th_elements:
         return [], []
 
-    # Extraer filas
+    # Leer los títulos de columna y su índice de celda original exacto
+    col_info = []  # Lista de tuplas: (index_in_table, column_title)
+    for idx, th in enumerate(th_elements):
+        title_el = th.query_selector(".ui-column-title")
+        title = title_el.inner_text().strip() if title_el else th.inner_text().strip()
+
+        # Ignorar columnas sin título (como el botón Opciones/toggler)
+        if not title:
+            continue
+
+        col_info.append((idx, title))
+
+    if not col_info:
+        return [], []
+
+    columns = [title for _, title in col_info]
+
+    # Extraer filas alineando el índice exacto de la celda td con la columna th
     result_rows = []
     rows = tbody.query_selector_all("tr")
     for row in rows:
@@ -150,14 +153,10 @@ def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id,
         if not cells:
             continue
 
-        # Saltar primera columna si es botón de Opciones
-        first_has_toggler = cells[0].query_selector(".p-row-toggler, button, .ui-button")
-        data_cells = cells[1:] if first_has_toggler else cells
-
         row_data = {}
-        for i, col_name in enumerate(columns):
-            if i < len(data_cells):
-                row_data[col_name] = _extract_smart_cell(data_cells[i], col_name)
+        for cell_idx, col_name in col_info:
+            if cell_idx < len(cells):
+                row_data[col_name] = _extract_smart_cell(cells[cell_idx], col_name)
             else:
                 row_data[col_name] = ""
 
@@ -176,7 +175,6 @@ TAB_CONFIG = [
         "icon": "🏨",
         "csv_name": "hotels.csv",
         "sheet_name": "Alojamientos",
-        "known_columns": HOTEL_COLUMNS,
     },
     {
         "key": "transports",
@@ -186,7 +184,6 @@ TAB_CONFIG = [
         "icon": "✈️",
         "csv_name": "transports.csv",
         "sheet_name": "Transportes",
-        "known_columns": None,
     },
     {
         "key": "financial",
@@ -196,7 +193,6 @@ TAB_CONFIG = [
         "icon": "💰",
         "csv_name": "financial.csv",
         "sheet_name": "Financiero",
-        "known_columns": None,
     },
     {
         "key": "activities",
@@ -206,7 +202,6 @@ TAB_CONFIG = [
         "icon": "🎫",
         "csv_name": "activities.csv",
         "sheet_name": "Actividades",
-        "known_columns": None,
     },
 ]
 
@@ -223,7 +218,7 @@ def scrape_booking_details(context, base_url, booking_id):
     detail_page = context.new_page()
     result = {}
     for cfg in TAB_CONFIG:
-        result[cfg["key"]] = {"rows": [], "columns": cfg.get("known_columns") or []}
+        result[cfg["key"]] = {"rows": [], "columns": []}
 
     try:
         detail_page.goto(detail_url, timeout=30000)
@@ -237,7 +232,6 @@ def scrape_booking_details(context, base_url, booking_id):
                 panel_id=cfg["panel_id"],
                 tab_name=cfg["tab_name"],
                 booking_id=booking_id,
-                known_columns=cfg["known_columns"],
             )
             result[cfg["key"]]["rows"] = rows
             if cols:
@@ -407,7 +401,7 @@ def scrape_bookings():
 
         # Acumuladores por tipo de tab
         all_rows_by_key = {cfg["key"]: [] for cfg in TAB_CONFIG}
-        columns_by_key = {cfg["key"]: cfg.get("known_columns") or [] for cfg in TAB_CONFIG}
+        columns_by_key = {cfg["key"]: [] for cfg in TAB_CONFIG}
         total = len(booking_ids)
 
         # Determinar la referencia de reserva de cada booking
