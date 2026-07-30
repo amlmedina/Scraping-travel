@@ -37,12 +37,19 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
 
 
 def _upload_timestamp_worksheet(sh, stats):
-    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora y métricas."""
+    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora, origen y métricas."""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Detectar si la ejecución es desde GitHub Actions o Servidor/Local (IndiprisTI)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        origen = "GitHub Actions"
+    else:
+        origen = "IndiprisTI"
 
     data_to_upload = [
         ["Métrica / Campo", "Valor"],
         ["Última Actualización", now_str],
+        ["Origen de Actualización", origen],
         ["Estado del Proceso", "Exitoso"],
     ]
 
@@ -57,7 +64,7 @@ def _upload_timestamp_worksheet(sh, stats):
         worksheet = sh.add_worksheet(title=worksheet_name, rows=20, cols=5)
 
     worksheet.update(values=data_to_upload, range_name="A1")
-    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada con fecha: {now_str}")
+    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada (Origen: {origen}, Fecha: {now_str})")
 
 
 def upload():
