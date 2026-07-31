@@ -63,10 +63,13 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
 
 
 def _upload_timestamp_worksheet(sh, stats, script_dir):
-    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora, origen, tiempo de ejecución y métricas."""
+    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora en zona horaria Ciudad de México (CDMX)."""
     import json
-
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        from zoneinfo import ZoneInfo
+        now_str = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Detectar si la ejecución es desde GitHub Actions o Servidor/Local (IndiprisTI)
     if os.environ.get("GITHUB_ACTIONS") == "true":
@@ -87,7 +90,7 @@ def _upload_timestamp_worksheet(sh, stats, script_dir):
 
     data_to_upload = [
         ["Métrica / Campo", "Valor"],
-        ["Última Actualización", now_str],
+        ["Última Actualización (CDMX)", now_str],
         ["Origen de Actualización", origen],
         ["Tiempo de Ejecución (Scraper)", duration_str],
         ["Estado del Proceso", "Exitoso"],
@@ -104,7 +107,7 @@ def _upload_timestamp_worksheet(sh, stats, script_dir):
         worksheet = sh.add_worksheet(title=worksheet_name, rows=20, cols=5)
 
     worksheet.update(values=data_to_upload, range_name="A1")
-    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada (Origen: {origen}, Tiempo: {duration_str}, Fecha: {now_str})")
+    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada (Origen: {origen}, Tiempo: {duration_str}, Fecha CDMX: {now_str})")
 
 
 def upload():

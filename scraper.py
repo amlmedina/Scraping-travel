@@ -566,16 +566,23 @@ def scrape_bookings():
         mins, secs = divmod(elapsed, 60)
         duration_fmt = f"{mins} min {secs} seg" if mins > 0 else f"{secs} seg"
 
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            ts_cdmx = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            ts_cdmx = time.strftime("%Y-%m-%d %H:%M:%S")
+
         meta = {
             "duration_seconds": elapsed,
             "duration_formatted": duration_fmt,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp_cdmx": ts_cdmx,
         }
         meta_path = os.path.join(script_dir, "execution_meta.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
-        print(f"\n✅ Scraping completo en {duration_fmt}.")
+        print(f"\n✅ Scraping completo en {duration_fmt} (Hora CDMX: {ts_cdmx}).")
 
 
 if __name__ == "__main__":
