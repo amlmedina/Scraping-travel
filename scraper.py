@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -246,6 +247,7 @@ def scrape_booking_details(context, base_url, booking_id):
 
 
 def scrape_bookings():
+    start_time = time.time()
     print("Iniciando scraper...")
     base_url = "https://abastur.indipris.com"
     login_url = f"{base_url}/admin"
@@ -459,7 +461,22 @@ def scrape_bookings():
                 pd.DataFrame(columns=empty_cols).to_csv(csv_file, index=False, encoding='utf-8-sig')
 
         browser.close()
-        print("\n✅ Scraping completo.")
+
+        # Calcular tiempo de ejecución
+        elapsed = round(time.time() - start_time)
+        mins, secs = divmod(elapsed, 60)
+        duration_fmt = f"{mins} min {secs} seg" if mins > 0 else f"{secs} seg"
+
+        meta = {
+            "duration_seconds": elapsed,
+            "duration_formatted": duration_fmt,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        meta_path = os.path.join(script_dir, "execution_meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+
+        print(f"\n✅ Scraping completo en {duration_fmt}.")
 
 
 if __name__ == "__main__":

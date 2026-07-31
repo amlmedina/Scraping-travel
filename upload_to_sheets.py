@@ -36,8 +36,10 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
     return len(df)
 
 
-def _upload_timestamp_worksheet(sh, stats):
-    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora, origen y métricas."""
+def _upload_timestamp_worksheet(sh, stats, script_dir):
+    """Crea o actualiza la pestaña 'Ultima_Actualizacion' con la fecha/hora, origen, tiempo de ejecución y métricas."""
+    import json
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Detectar si la ejecución es desde GitHub Actions o Servidor/Local (IndiprisTI)
@@ -46,10 +48,22 @@ def _upload_timestamp_worksheet(sh, stats):
     else:
         origen = "IndiprisTI"
 
+    # Leer tiempo de ejecución guardado por scraper.py
+    meta_path = os.path.join(script_dir, "execution_meta.json")
+    duration_str = "N/D"
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                duration_str = meta.get("duration_formatted", "N/D")
+        except Exception:
+            pass
+
     data_to_upload = [
         ["Métrica / Campo", "Valor"],
         ["Última Actualización", now_str],
         ["Origen de Actualización", origen],
+        ["Tiempo de Ejecución (Scraper)", duration_str],
         ["Estado del Proceso", "Exitoso"],
     ]
 
@@ -64,7 +78,7 @@ def _upload_timestamp_worksheet(sh, stats):
         worksheet = sh.add_worksheet(title=worksheet_name, rows=20, cols=5)
 
     worksheet.update(values=data_to_upload, range_name="A1")
-    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada (Origen: {origen}, Fecha: {now_str})")
+    print(f"\n  ✓ Pestaña '{worksheet_name}' actualizada (Origen: {origen}, Tiempo: {duration_str}, Fecha: {now_str})")
 
 
 def upload():
@@ -123,8 +137,8 @@ def upload():
             row_count = _upload_csv_to_worksheet(sh, csv_path, sheet_name, idx)
             stats[sheet_name] = row_count
 
-        # Subir pestaña con fecha y hora de actualización
-        _upload_timestamp_worksheet(sh, stats)
+        # Subir pestaña con fecha, origen y tiempo de ejecución
+        _upload_timestamp_worksheet(sh, stats, script_dir)
 
         print("\n✅ ¡Google Sheets actualizado con éxito!")
 
