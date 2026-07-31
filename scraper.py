@@ -32,14 +32,101 @@ HOTEL_COLUMNS = [
 
 
 def _extract_star_count(cell):
-    """Cuenta las estrellas visibles (no hidden) dentro de una celda de categoría."""
+    """Cuenta las estrellas visibles (no hidden) y devuelve emojis ⭐ (ej: ⭐⭐⭐)."""
     stars = cell.query_selector_all("i.fa-star")
     visible = 0
     for star in stars:
         classes = star.get_attribute("class") or ""
         if "hidden" not in classes:
             visible += 1
-    return str(visible) if visible else ""
+    return ("⭐" * visible) if visible else ""
+
+
+def _clean_cells_alignment(cells, th_elements):
+    """Ajusta celdas td si el HTML de JSF renderizó celdas td extra sin su correspondiente th."""
+    if len(cells) <= len(th_elements):
+        return cells
+
+    # Si hay 1 celda extra (ej: 22 td vs 21 th en Alojamientos)
+    if len(cells) == len(th_elements) + 1:
+        cleaned = list(cells)
+        for check_idx in range(1, len(cleaned) - 1):
+            txt = cleaned[check_idx].inner_text().strip()
+            inp = cleaned[check_idx].query_selector("input:not([type='hidden'])")
+            inp_val = (inp.get_attribute("value") or "").strip() if inp else ""
+
+            # Si la celda está totalmente vacía en el DOM
+            if not txt and not inp_val:
+                next_txt = cleaned[check_idx + 1].inner_text().strip()
+                next_inp = cleaned[check_idx + 1].query_selector("input:not([type='hidden'])")
+                next_inp_val = (next_inp.get_attribute("value") or "").strip() if next_inp else ""
+                check_val = next_txt or next_inp_val
+
+                # Si la celda siguiente es Apartamento ('No'/'Sí') o Check-in (fecha)
+                if check_val in ("No", "Sí", "Si") or re.match(r"^\d{1,2}/\d{1,2}/\d{4}", check_val) or re.match(r"^\d{4}-\d{2}-\d{2}", check_val):
+                    cleaned.pop(check_idx)
+                    if len(cleaned) == len(th_elements):
+                        return cleaned
+
+    return cells
+
+
+def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id):
+    """Scrapes una pestaña y su tabla dentro de la página de detalle."""
+    tab = detail_page.query_selector(tab_selector)
+    if not tab:
+        return [], []
+
+    tab.click()
+    time.sleep(2)
+
+    escaped_panel = panel_id.replace(':', '\\:')
+    panel_sel = f"#{escaped_panel}"
+
+    thead = detail_page.query_selector(f"{panel_sel} thead")
+    tbody = detail_page.query_selector(f"{panel_sel} tbody")
+
+    if not tbody or not thead:
+        return [], []
+
+    th_elements = thead.query_selector_all("th")
+    if not th_elements:
+        return [], []
+
+    col_info = []  # Lista de tuplas: (index_in_table, column_title)
+    for idx, th in enumerate(th_elements):
+        title_el = th.query_selector(".ui-column-title")
+        title = title_el.inner_text().strip() if title_el else th.inner_text().strip()
+
+        if not title:
+            continue
+
+        col_info.append((idx, title))
+
+    if not col_info:
+        return [], []
+
+    columns = [title for _, title in col_info]
+
+    result_rows = []
+    rows = tbody.query_selector_all("tr")
+    for row in rows:
+        raw_cells = row.query_selector_all("td")
+        if not raw_cells:
+            continue
+
+        cells = _clean_cells_alignment(raw_cells, th_elements)
+
+        row_data = {}
+        for cell_idx, col_name in col_info:
+            if cell_idx < len(cells):
+                row_data[col_name] = _extract_smart_cell(cells[cell_idx], col_name)
+            else:
+                row_data[col_name] = ""
+
+        result_rows.append(row_data)
+
+    return result_rows, columns
 
 
 import re
