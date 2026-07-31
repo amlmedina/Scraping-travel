@@ -42,41 +42,53 @@ def _extract_star_count(cell):
     return str(visible) if visible else ""
 
 
+import re
+
+def normalize_date_val(val_str):
+    """Normaliza cadenas de fecha a formato ISO (YYYY-MM-DD o YYYY-MM-DD HH:MM:SS) para Looker Studio."""
+    if not isinstance(val_str, str) or not val_str.strip():
+        return ""
+
+    s = re.sub(r"\s*\([A-Z]{3,4}\)", "", val_str.strip()).strip()
+
+    m_dt = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$", s)
+    if m_dt:
+        d, m, y, h, mn, sec = m_dt.groups()
+        return f"{int(y):04d}-{int(m):02d}-{int(d):02d} {int(h):02d}:{int(mn):02d}:{int(sec or 0):02d}"
+
+    m_d = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
+    if m_d:
+        d, m, y = m_d.groups()
+        return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+
+    return s
+
+
 def _extract_smart_cell(cell, header_name=""):
     """Extrae el valor de una celda de forma inteligente, detectando inputs, selects, estrellas, etc."""
 
+    val = ""
     # Categoría (estrellas) — detectar por nombre de header o por presencia de estrellas
     if "categoría" in header_name.lower() or "category" in header_name.lower():
         stars = cell.query_selector_all("i.fa-star")
         if stars:
-            return _extract_star_count(cell)
-
-    # Select disabled (ej: Estado)
-    sel = cell.query_selector("select")
-    if sel:
+            val = _extract_star_count(cell)
+    elif cell.query_selector("select"):
+        sel = cell.query_selector("select")
         opt = sel.query_selector("option[selected]")
         if opt:
-            return opt.inner_text().strip()
+            val = opt.inner_text().strip()
+    elif cell.query_selector("input.ui-autocomplete-input"):
+        val = (cell.query_selector("input.ui-autocomplete-input").get_attribute("value") or "").strip()
+    elif cell.query_selector("input.c-text-input:not([type='hidden'])"):
+        val = (cell.query_selector("input.c-text-input:not([type='hidden'])").get_attribute("value") or "").strip()
+    elif cell.query_selector("input:not([type='hidden'])"):
+        val = (cell.query_selector("input:not([type='hidden'])").get_attribute("value") or "").strip()
 
-    # Autocomplete input (ej: Régimen de comidas)
-    ac_input = cell.query_selector("input.ui-autocomplete-input")
-    if ac_input:
-        return (ac_input.get_attribute("value") or "").strip()
+    if not val:
+        val = cell.inner_text().strip()
 
-    # Input de texto disabled (ej: Habitaciones, Referencias)
-    inp = cell.query_selector("input.c-text-input:not([type='hidden'])")
-    if inp:
-        return (inp.get_attribute("value") or "").strip()
-
-    # Input genérico con value (ej: campos de transporte)
-    generic_inp = cell.query_selector("input:not([type='hidden'])")
-    if generic_inp:
-        val = (generic_inp.get_attribute("value") or "").strip()
-        if val:
-            return val
-
-    # Default: inner_text
-    return cell.inner_text().strip()
+    return normalize_date_val(val)
 
 
 def _read_table_headers(detail_page, thead_selector):
@@ -348,7 +360,7 @@ def scrape_bookings():
 
             for row in rows:
                 cells = row.query_selector_all("td")
-                row_data = [cell.inner_text().strip() for cell in cells]
+                row_data = [normalize_date_val(cell.inner_text().strip()) for cell in cells]
 
                 # Extraer bookingId del link de la primera celda
                 bid = ""

@@ -6,6 +6,28 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 
+import re
+
+def normalize_date_val(val_str):
+    """Normaliza cadenas de fecha a formato ISO (YYYY-MM-DD o YYYY-MM-DD HH:MM:SS) para Looker Studio."""
+    if not isinstance(val_str, str) or not val_str.strip():
+        return ""
+
+    s = re.sub(r"\s*\([A-Z]{3,4}\)", "", val_str.strip()).strip()
+
+    m_dt = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$", s)
+    if m_dt:
+        d, m, y, h, mn, sec = m_dt.groups()
+        return f"{int(y):04d}-{int(m):02d}-{int(d):02d} {int(h):02d}:{int(mn):02d}:{int(sec or 0):02d}"
+
+    m_d = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
+    if m_d:
+        d, m, y = m_d.groups()
+        return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+
+    return s
+
+
 def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
     """Sube un CSV a una pestaña del Google Sheet. La crea si no existe."""
     if not os.path.exists(csv_path):
@@ -15,6 +37,10 @@ def _upload_csv_to_worksheet(sh, csv_path, worksheet_name, worksheet_index):
     print(f"\nCargando datos desde {os.path.basename(csv_path)}...")
     df = pd.read_csv(csv_path)
     df = df.fillna("")
+
+    # Normalizar todas las celdas de fecha a formato ISO para Looker Studio
+    for col in df.columns:
+        df[col] = df[col].astype(str).apply(normalize_date_val)
 
     data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
 
