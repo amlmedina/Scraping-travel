@@ -32,14 +32,14 @@ HOTEL_COLUMNS = [
 
 
 def _extract_star_count(cell):
-    """Cuenta las estrellas visibles (no hidden) y devuelve emojis ⭐ (ej: ⭐⭐⭐)."""
+    """Cuenta las estrellas visibles (no hidden) y devuelve un número (ej: 3) para compatibilidad con BigQuery."""
     stars = cell.query_selector_all("i.fa-star")
     visible = 0
     for star in stars:
         classes = star.get_attribute("class") or ""
         if "hidden" not in classes:
             visible += 1
-    return ("⭐" * visible) if visible else ""
+    return str(visible) if visible else ""
 
 
 def _clean_cells_alignment(cells, th_elements):
