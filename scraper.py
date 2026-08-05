@@ -1,4 +1,4 @@
-import json
+ import json
 import os
 import sys
 import time
@@ -392,7 +392,7 @@ def scrape_bookings():
             time.sleep(2)
 
             # Establecer fecha de inicio fija al 1 de junio de 2026
-            start_date = "01/05/2026"
+            start_date = "01/06/2026"
             print(f"Estableciendo fecha de inicio de búsqueda a: {start_date}")
 
             # Rellenar las fechas directamente en el DOM mediante JavaScript sin disparar eventos de red intermedios
