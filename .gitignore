@@ -15,3 +15,14 @@ bookings.csv
 .DS_Store
 .vscode/
 .idea/
+
+# Credenciales y logs
+gcp_key.json
+*.log
+execution_meta.json
+remote_scraper.py
+incident_report.json
+incident_report.md
+last_successful_sync.json
+*.bak
+
