@@ -1,5 +1,6 @@
 #!/bin/bash
 set -o pipefail
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 echo "$(date): Iniciando ejecución local programada..." >> local_runs.log
