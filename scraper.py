@@ -106,6 +106,7 @@ JS_EXTRACT_PANEL = """(panelId) => {
                 const sels = Array.from(td.querySelectorAll('select'))
                     .map(s => s.options[s.selectedIndex] ? s.options[s.selectedIndex].text.trim() : '')
                     .filter(Boolean);
+                const stars = td.querySelectorAll('i.fa-star:not(.hidden)');
                 const normCol = col.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 const isRoomCol = normCol.includes('habitacion') || normCol.includes('room');
                 let cellVal = '';
