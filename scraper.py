@@ -471,8 +471,9 @@ async def scrape_bookings():
 
         all_rows_by_key = {cfg["key"]: [] for cfg in TAB_CONFIG}
         columns_by_key = {cfg["key"]: [] for cfg in TAB_CONFIG}
-
-        sem = asyncio.Semaphore(4)  # 4 páginas simultáneas para estabilidad y evitar timeouts
+        concurrency_limit = int(os.environ.get("CONCURRENCY", "8"))
+        print(f"Configurando concurrencia a {concurrency_limit} tareas en paralelo...")
+        sem = asyncio.Semaphore(concurrency_limit)
         completed_count = 0
 
         async def worker(idx, bid, booking_ref):

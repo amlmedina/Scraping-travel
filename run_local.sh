@@ -8,6 +8,7 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 export PYTHONUNBUFFERED=1
+export CONCURRENCY="${CONCURRENCY:-8}"
 python3 scraper.py 2>&1 | tee -a local_runs.log
 python3 upload_to_sheets.py 2>&1 | tee -a local_runs.log
 echo "$(date): Ejecución finalizada." >> local_runs.log
