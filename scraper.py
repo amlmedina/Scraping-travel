@@ -53,128 +53,91 @@ def normalize_date_val(val_str):
     return s
 
 
-async def _extract_star_count(cell):
-    """Cuenta las estrellas visibles (no hidden) y devuelve un número (ej: 3) para compatibilidad con BigQuery."""
-    stars = await cell.query_selector_all("i.fa-star")
-    visible = 0
-    for star in stars:
-        classes = (await star.get_attribute("class")) or ""
-        if "hidden" not in classes:
-            visible += 1
-    return str(visible) if visible else ""
+JS_EXTRACT_PANEL = """(panelId) => {
+    const panel = document.getElementById(panelId);
+    if (!panel) return { rows: [], cols: [] };
+    const thead = panel.querySelector('thead');
+    const tbody = panel.querySelector('tbody');
+    if (!thead || !tbody) return { rows: [], cols: [] };
+
+    const ths = Array.from(thead.querySelectorAll('th'));
+    const cols = [];
+    const colIndices = [];
+    ths.forEach((th, idx) => {
+        const titleEl = th.querySelector('.ui-column-title');
+        const title = (titleEl ? titleEl.innerText : th.innerText).trim();
+        if (title) {
+            cols.push(title);
+            colIndices.push(idx);
+        }
+    });
+
+    const rows = [];
+    for (const tr of tbody.querySelectorAll('tr')) {
+        let tds = Array.from(tr.querySelectorAll('td'));
+        if (!tds.length || (tds.length <= 1 && ths.length > 1)) continue;
+
+        // Limpieza de alineación (celda fantasma en JSF)
+        if (tds.length === ths.length + 1) {
+            for (let i = 1; i < tds.length - 1; i++) {
+                const txt = tds[i].innerText.trim();
+                const inp = tds[i].querySelector("input:not([type='hidden'])");
+                const val = inp ? inp.value.trim() : '';
+                if (!txt && !val) {
+                    const nextTxt = tds[i+1].innerText.trim();
+                    const nextInp = tds[i+1].querySelector("input:not([type='hidden'])");
+                    const nextVal = (nextInp ? nextInp.value.trim() : '') || nextTxt;
+                    if (['No', 'Sí', 'Si'].includes(nextVal) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(nextVal) || /^\\d{4}-\\d{2}-\\d{2}/.test(nextVal)) {
+                        tds.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        const rowData = {};
+        cols.forEach((col, cIdx) => {
+            const tdIdx = colIndices[cIdx];
+            if (tdIdx < tds.length) {
+                const td = tds[tdIdx];
+                const inp = td.querySelector("input:not([type='hidden'])");
+                const sel = td.querySelector('select');
+                const stars = td.querySelectorAll('i.fa-star:not(.hidden)');
+                let cellVal = '';
+                if (col.toLowerCase().includes('categoría') || col.toLowerCase().includes('category')) {
+                    cellVal = stars.length > 0 ? String(stars.length) : td.innerText.trim();
+                } else if (inp) {
+                    cellVal = inp.value.trim();
+                } else if (sel) {
+                    cellVal = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.trim() : '';
+                } else {
+                    cellVal = td.innerText.trim();
+                }
+                rowData[col] = cellVal;
+            } else {
+                rowData[col] = '';
+            }
+        });
+        rows.push(rowData);
+    }
+    return { rows, cols };
+}"""
 
 
-async def _clean_cells_alignment(cells, th_elements):
-    """Ajusta celdas td si el HTML de JSF renderizó celdas td extra sin su correspondiente th."""
-    if len(cells) <= len(th_elements):
-        return cells
-
-    # Si hay 1 celda extra (ej: 22 td vs 21 th en Alojamientos)
-    if len(cells) == len(th_elements) + 1:
-        cleaned = list(cells)
-        for check_idx in range(1, len(cleaned) - 1):
-            txt = (await cleaned[check_idx].inner_text()).strip()
-            inp = await cleaned[check_idx].query_selector("input:not([type='hidden'])")
-            inp_val = ((await inp.get_attribute("value")) or "").strip() if inp else ""
-
-            # Si la celda está totalmente vacía en el DOM
-            if not txt and not inp_val:
-                next_txt = (await cleaned[check_idx + 1].inner_text()).strip()
-                next_inp = await cleaned[check_idx + 1].query_selector("input:not([type='hidden'])")
-                next_inp_val = ((await next_inp.get_attribute("value")) or "").strip() if next_inp else ""
-                check_val = next_txt or next_inp_val
-
-                # Si la celda siguiente es Apartamento ('No'/'Sí') o Check-in (fecha)
-                if check_val in ("No", "Sí", "Si") or re.match(r"^\d{1,2}/\d{1,2}/\d{4}", check_val) or re.match(r"^\d{4}-\d{2}-\d{2}", check_val):
-                    cleaned.pop(check_idx)
-                    if len(cleaned) == len(th_elements):
-                        return cleaned
-
-    return cells
-
-
-async def _extract_smart_cell(cell, header_name=""):
-    """Extrae el valor de una celda de forma inteligente, detectando inputs, selects, estrellas, etc."""
-    val = ""
-    # Categoría (estrellas)
-    if "categoría" in header_name.lower() or "category" in header_name.lower():
-        stars = await cell.query_selector_all("i.fa-star")
-        if stars:
-            val = await _extract_star_count(cell)
-    elif await cell.query_selector("select"):
-        sel = await cell.query_selector("select")
-        opt = await sel.query_selector("option[selected]")
-        if opt:
-            val = (await opt.inner_text()).strip()
-    elif await cell.query_selector("input.ui-autocomplete-input"):
-        inp = await cell.query_selector("input.ui-autocomplete-input")
-        val = ((await inp.get_attribute("value")) or "").strip()
-    elif await cell.query_selector("input.c-text-input:not([type='hidden'])"):
-        inp = await cell.query_selector("input.c-text-input:not([type='hidden'])")
-        val = ((await inp.get_attribute("value")) or "").strip()
-    elif await cell.query_selector("input:not([type='hidden'])"):
-        inp = await cell.query_selector("input:not([type='hidden'])")
-        val = ((await inp.get_attribute("value")) or "").strip()
-
-    if not val:
-        val = (await cell.inner_text()).strip()
-
-    return normalize_date_val(val)
-
-
-async def _scrape_tab_table(detail_page, tab_selector, panel_id, tab_name, booking_id):
-    """Scrapes una pestaña y su tabla dentro de la página de detalle."""
-    tab = await detail_page.query_selector(tab_selector)
-    if not tab:
-        return [], []
-
-    await tab.click()
-    await asyncio.sleep(1)
-
-    escaped_panel = panel_id.replace(':', '\\:')
-    panel_sel = f"#{escaped_panel}"
-
-    thead = await detail_page.query_selector(f"{panel_sel} thead")
-    tbody = await detail_page.query_selector(f"{panel_sel} tbody")
-
-    if not tbody or not thead:
-        return [], []
-
-    th_elements = await thead.query_selector_all("th")
-    if not th_elements:
-        return [], []
-
-    col_info = []  # Lista de tuplas: (index_in_table, column_title)
-    for idx, th in enumerate(th_elements):
-        title_el = await th.query_selector(".ui-column-title")
-        title = (await title_el.inner_text()).strip() if title_el else (await th.inner_text()).strip()
-        if not title:
-            continue
-        col_info.append((idx, title))
-
-    if not col_info:
-        return [], []
-
-    columns = [title for _, title in col_info]
-    result_rows = []
-    rows = await tbody.query_selector_all("tr")
-    for row in rows:
-        raw_cells = await row.query_selector_all("td")
-        if not raw_cells or (len(raw_cells) <= 1 and len(th_elements) > 1):
-            continue
-
-        cells = await _clean_cells_alignment(raw_cells, th_elements)
-
-        row_data = {}
-        for cell_idx, col_name in col_info:
-            if cell_idx < len(cells):
-                row_data[col_name] = await _extract_smart_cell(cells[cell_idx], col_name)
-            else:
-                row_data[col_name] = ""
-
-        result_rows.append(row_data)
-
-    return result_rows, columns
+def _normalize_extracted_table(raw_data):
+    """Aplica normalización de títulos de columna y fechas ISO de forma vectorizada en Python."""
+    if not raw_data or not raw_data.get("rows"):
+        return {"rows": [], "columns": [c.title() for c in raw_data.get("cols", [])] if raw_data else []}
+    cols = [c.title() for c in raw_data.get("cols", [])]
+    rows = []
+    for r in raw_data["rows"]:
+        norm_row = {}
+        for k, v in r.items():
+            norm_k = k.title()
+            norm_v = normalize_date_val(v) if isinstance(v, str) else v
+            norm_row[norm_k] = norm_v
+        rows.append(norm_row)
+    return {"rows": rows, "columns": cols}
 
 
 # ---------- Configuración de pestañas a scrapear ----------
@@ -219,35 +182,49 @@ TAB_CONFIG = [
 
 
 async def scrape_booking_details(context, base_url, booking_id, sem):
-    """Abre la página de detalle de un booking y extrae todas las pestañas configuradas con reintentos."""
+    """Abre la página de detalle de un booking y extrae todas las pestañas a máxima velocidad."""
     async with sem:
         detail_url = f"{base_url}/admin/bookings/show-booking.xhtml?bookingId={booking_id}"
-        result = {}
-        for cfg in TAB_CONFIG:
-            result[cfg["key"]] = {"rows": [], "columns": []}
+        result = {cfg["key"]: {"rows": [], "columns": []} for cfg in TAB_CONFIG}
 
         for attempt in range(1, 4):
             detail_page = None
             try:
                 detail_page = await context.new_page()
-                await detail_page.goto(detail_url, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(1)
+                await detail_page.goto(detail_url, wait_until="domcontentloaded", timeout=35000)
 
-                for cfg in TAB_CONFIG:
-                    rows, cols = await _scrape_tab_table(
-                        detail_page,
-                        tab_selector=cfg["tab_selector"],
-                        panel_id=cfg["panel_id"],
-                        tab_name=cfg["tab_name"],
-                        booking_id=booking_id,
-                    )
-                    result[cfg["key"]]["rows"] = rows
-                    if cols:
-                        result[cfg["key"]]["columns"] = cols
+                # 1. Alojamientos y Financiero ya están pre-renderizados en el DOM inicial
+                raw_hotels = await detail_page.evaluate(JS_EXTRACT_PANEL, "MPFEditForm:tabView:tabHotel")
+                raw_financial = await detail_page.evaluate(JS_EXTRACT_PANEL, "MPFEditForm:tabView:tabFinancial")
+                result["hotels"] = _normalize_extracted_table(raw_hotels)
+                result["financial"] = _normalize_extracted_table(raw_financial)
+
+                # 2. Transportes: Solo si la pestaña existe en el DOM de esta reserva
+                t_tab = await detail_page.query_selector('a[href="#MPFEditForm:tabView:tabTransport"]')
+                if t_tab:
+                    try:
+                        await t_tab.click()
+                        await detail_page.wait_for_selector('[id="MPFEditForm:tabView:tabTransport"] tbody', timeout=2500)
+                        raw_t = await detail_page.evaluate(JS_EXTRACT_PANEL, "MPFEditForm:tabView:tabTransport")
+                        result["transports"] = _normalize_extracted_table(raw_t)
+                    except Exception:
+                        pass
+
+                # 3. Actividades: Solo si la pestaña existe en el DOM de esta reserva
+                a_tab = await detail_page.query_selector('a[href="#MPFEditForm:tabView:tabTickets"]')
+                if a_tab:
+                    try:
+                        await a_tab.click()
+                        await detail_page.wait_for_selector('[id="MPFEditForm:tabView:tabTickets"] tbody', timeout=2500)
+                        raw_a = await detail_page.evaluate(JS_EXTRACT_PANEL, "MPFEditForm:tabView:tabTickets")
+                        result["activities"] = _normalize_extracted_table(raw_a)
+                    except Exception:
+                        pass
+
                 return result
             except Exception as e:
                 if attempt < 3:
-                    await asyncio.sleep(2 * attempt)
+                    await asyncio.sleep(1.5 * attempt)
                 else:
                     print(f"    ✗ Error procesando detalle de {booking_id} tras 3 intentos: {e}")
             finally:
