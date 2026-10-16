@@ -100,18 +100,41 @@ JS_EXTRACT_PANEL = """(panelId) => {
             const tdIdx = colIndices[cIdx];
             if (tdIdx < tds.length) {
                 const td = tds[tdIdx];
-                const inp = td.querySelector("input:not([type='hidden'])");
-                const sel = td.querySelector('select');
+                const inps = Array.from(td.querySelectorAll("input:not([type='hidden'])"))
+                    .map(i => i.value.trim())
+                    .filter(Boolean);
+                const sels = Array.from(td.querySelectorAll('select'))
+                    .map(s => s.options[s.selectedIndex] ? s.options[s.selectedIndex].text.trim() : '')
+                    .filter(Boolean);
                 const stars = td.querySelectorAll('i.fa-star:not(.hidden)');
+                const isRoomCol = col.toLowerCase().includes('habitacion') || col.toLowerCase().includes('room');
                 let cellVal = '';
+
                 if (col.toLowerCase().includes('categoría') || col.toLowerCase().includes('category')) {
                     cellVal = stars.length > 0 ? String(stars.length) : td.innerText.trim();
-                } else if (inp) {
-                    cellVal = inp.value.trim();
-                } else if (sel) {
-                    cellVal = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.trim() : '';
+                } else if (inps.length > 0) {
+                    if (inps.length > 1 && isRoomCol) {
+                        cellVal = inps.map((val, idx) => `Habitación ${idx + 1}: ${val}`).join('\\n');
+                    } else if (inps.length > 1) {
+                        cellVal = inps.join('\\n');
+                    } else {
+                        cellVal = inps[0];
+                    }
+                } else if (sels.length > 0) {
+                    if (sels.length > 1 && isRoomCol) {
+                        cellVal = sels.map((val, idx) => `Habitación ${idx + 1}: ${val}`).join('\\n');
+                    } else if (sels.length > 1) {
+                        cellVal = sels.join('\\n');
+                    } else {
+                        cellVal = sels[0];
+                    }
                 } else {
-                    cellVal = td.innerText.trim();
+                    const lines = td.innerText.split('\\n').map(l => l.trim()).filter(Boolean);
+                    if (lines.length > 1 && isRoomCol) {
+                        cellVal = lines.map((val, idx) => `Habitación ${idx + 1}: ${val}`).join('\\n');
+                    } else {
+                        cellVal = td.innerText.trim();
+                    }
                 }
                 rowData[col] = cellVal;
             } else {
